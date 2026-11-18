@@ -1,0 +1,13 @@
+@tailwind base; @tailwind components; @tailwind utilities;
+:root { --bg: 248 250 252; --surface: 255 255 255; --line: 226 232 240; --ink: 15 23 42; --mute: 100 116 139; }
+.dark { --bg: 7 9 20; --surface: 15 19 36; --line: 38 45 70; --ink: 236 240 252; --mute: 139 149 178; }
+body { @apply bg-bg text-ink font-sans antialiased; }
+.glass { @apply bg-surface/60 backdrop-blur-xl border border-line/70; }
+.card { @apply rounded-2xl border border-line bg-surface/80 shadow-[0_1px_0_rgb(255_255_255/0.03)_inset,0_12px_40px_-16px_rgb(0_0_0/0.5)]; }
+.grad-text { @apply bg-gradient-to-r from-violet-400 via-violet-500 to-cyan-400 bg-clip-text text-transparent; }
+.btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400; }
+.btn-primary { @apply btn text-white bg-gradient-to-r from-violet-600 to-cyan-500 shadow-lg shadow-violet-900/30 hover:brightness-110 hover:-translate-y-px; }
+.btn-ghost { @apply btn border border-line text-ink hover:bg-ink/5; }
+.label { @apply text-xs font-medium uppercase tracking-wider text-mute; }
+.recharts-tooltip-wrapper { outline: none; }
+::selection { background: rgb(139 92 246 / .4); }
