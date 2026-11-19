@@ -7,7 +7,11 @@ export function useRecorder() {
     setError(null);
     if (!navigator.mediaDevices?.getUserMedia) { setError("Microphone access is not supported in this browser (needs HTTPS or localhost)."); return; }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // autoGainControl/noiseSuppression pull the recording toward a consistent level and cleanliness
+      // before it ever reaches the backend, which matters a lot for a model trained on studio-mixed TV audio.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      });
       const ctx = new AudioContext(); const an = ctx.createAnalyser(); an.fftSize = 512; ctx.createMediaStreamSource(stream).connect(an);
       const buf = new Uint8Array(an.fftSize);
       const tick = () => { an.getByteTimeDomainData(buf); let s = 0; for (const v of buf) s += (v - 128) ** 2; setLevel(Math.min(1, Math.sqrt(s / buf.length) / 40)); raf.current = requestAnimationFrame(tick); };

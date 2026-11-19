@@ -6,6 +6,9 @@ __pycache__/
 .env
 dataset/audio/
 dataset/raw_clips/
+dataset/external/
 dataset/*.zip
 experiments/audio_features.csv
+backend/app/models/speech_model.joblib
+backend/app/models/fusion_model.joblib
 .DS_Store

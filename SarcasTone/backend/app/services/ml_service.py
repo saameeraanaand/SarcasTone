@@ -2,7 +2,7 @@ import time, subprocess, tempfile, os, shutil
 from pathlib import Path
 import numpy as np, pandas as pd, joblib, librosa
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-from ..ml.data import clean_text, ROOT
+from ..ml.data import clean_text, sentiment_shift, SENT_COLS, ROOT
 from ..ml.features import load_audio, feature_vector, contours, pause_stats, SR, N_MFCC, FEATURE_NAMES
 import json
 
@@ -31,17 +31,28 @@ class MlService:
         return {"compound": c, "label": "positive" if c >= .05 else "negative" if c <= -.05 else "neutral",
                 "pos": s["pos"], "neu": s["neu"], "neg": s["neg"]}
 
-    def _top_terms(self, text, k=6):
-        pipe = self.models["text"]; vec, clf = pipe.named_steps["tfidf"], pipe.named_steps["clf"]
-        x = vec.transform([clean_text(text)]); names = vec.get_feature_names_out()
+    _SHIFT_LABELS = {"sent_shift": "sentiment contrast across the sentence", "sent_min": "most negative part",
+                      "sent_max": "most positive part"}
+
+    def _top_terms(self, clean, shift, k=6):
+        pipe = self.models["text"]; fuse, clf = pipe.named_steps["fuse"], pipe.named_steps["clf"]
+        vec, sc = fuse.named_transformers_["t"], fuse.named_transformers_["s"]
+        x = vec.transform([clean]); names = vec.get_feature_names_out()
         idx = x.nonzero()[1]; contrib = [(names[i], float(x[0, i] * clf.coef_[0][i])) for i in idx]
+        n_tfidf = len(names)
+        sent_vals = sc.transform([[shift[c] for c in SENT_COLS]])[0]
+        for j, c in enumerate(SENT_COLS):
+            w = float(sent_vals[j] * clf.coef_[0][n_tfidf + j])
+            if abs(w) > 0.02: contrib.append((self._SHIFT_LABELS[c], w))
         return sorted(contrib, key=lambda t: -abs(t[1]))[:k]
 
     def text(self, text):
         t0 = time.perf_counter()
         if "text" not in self.models: raise RuntimeError("Text model not trained.")
-        p = self.models["text"].predict_proba([clean_text(text)])[0]
-        terms = self._top_terms(text)
+        clean = clean_text(text); shift = sentiment_shift(clean)
+        X = pd.DataFrame([{"clean": clean, **shift}])
+        p = self.models["text"].predict_proba(X)[0]
+        terms = self._top_terms(clean, shift)
         expl = ("Prediction comes from a TF-IDF + Logistic Regression model. "
                 + (f"Terms in your text that moved the score most (positive = toward Sarcastic): "
                    + ", ".join(f'"{t}" ({w:+.2f})' for t, w in terms) + "." if terms else
@@ -50,6 +61,24 @@ class MlService:
         return {"model": "TF-IDF + Logistic Regression", "prediction": self._pred(p), "sentiment": self.sentiment(text),
                 "top_terms": [{"term": a, "weight": b} for a, b in terms], "explanation": expl,
                 "model_cv_accuracy": self.cv_acc("text_only"), "processing_ms": 1000 * (time.perf_counter() - t0)}
+
+    def _audio_scaler(self, key):
+        return (self.models["speech"] if key == "speech" else self.models["fusion"].speech_model).named_steps["sc"]
+
+    def _typicality(self, fv, key):
+        """How much the live recording's prosody profile resembles the training audio (690 TV-sitcom
+        clips), in standard deviations from the training mean. High = the model is extrapolating far
+        outside what it learned from, so its prediction is closer to a guess than a measurement."""
+        sc = self._audio_scaler(key)
+        x = np.array([fv[n] for n in FEATURE_NAMES])
+        z = np.abs((x - sc.mean_) / np.where(sc.scale_ == 0, 1, sc.scale_))
+        mean_z, frac_extreme = float(z.mean()), float((z > 3).mean())
+        out_of_distribution = mean_z > 1.5 or frac_extreme > 0.15
+        return {"out_of_distribution": out_of_distribution, "mean_z_score": round(mean_z, 2),
+                "note": ("This recording's acoustic profile (pitch/energy/spectral balance) is substantially "
+                         "different from the TV-sitcom clips the model was trained on, so treat this prediction "
+                         "as closer to a guess than a measurement." if out_of_distribution else
+                         "This recording's acoustic profile is broadly in line with the training data.")}
 
     @staticmethod
     def _to_wav(path):
@@ -98,12 +127,17 @@ class MlService:
             res["text_source"] = "user-provided"; res["sentiment"] = self.sentiment(text)
         if key in self.models:
             if mode == "multimodal":
-                X = pd.DataFrame([{"clean": clean_text(text), **fv}]); res["model"] = "Feature-level fusion (TF-IDF + prosody) + Logistic Regression"
+                clean = clean_text(text); shift = sentiment_shift(clean)
+                X = pd.DataFrame([{"clean": clean, **shift, **fv}])
+                res["model"] = "Late fusion: headline-augmented text model + prosody Random Forest, combined by a meta-classifier"
             else:
                 X = pd.DataFrame([fv])[FEATURE_NAMES]; res["model"] = "Prosody features + Random Forest"
             res["prediction"] = self._pred(self.models[key].predict_proba(X)[0]); res["model_available"] = True
             res["model_cv_accuracy"] = self.cv_acc(mkey)
+            res["domain_shift"] = self._typicality(fv, key)
             res["explanation"] = "Prediction from the trained model on measured prosody features (pitch, energy, MFCC, spectral, pauses, rate)."
+            if res["domain_shift"]["out_of_distribution"]:
+                res["explanation"] += " " + res["domain_shift"]["note"]
         else:
             res["explanation"] = ("The acoustic measurements shown are computed from your audio. No sarcasm prediction is shown because the "
                                   f"{mode} model has not been trained yet: the MUStARD audio clips were not available at training time. "

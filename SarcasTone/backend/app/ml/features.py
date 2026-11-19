@@ -1,12 +1,28 @@
 """Speech prosody features (Librosa). Every number is computed from the waveform."""
 import numpy as np, librosa
+from scipy.signal import butter, sosfiltfilt
 
 SR = 16000
 N_MFCC = 13
+TARGET_RMS = 0.1
+
+def _highpass(y, sr, cutoff=60):
+    """Removes DC offset / low-frequency rumble (mic handling noise, room hum) that studio-mixed
+    TV audio doesn't have, so live mic recordings don't look artificially different on that axis."""
+    if len(y) < 30: return y
+    sos = butter(4, cutoff, btype="highpass", fs=sr, output="sos")
+    return sosfiltfilt(sos, y).astype(np.float32)
 
 def load_audio(path, sr=SR):
     y, _ = librosa.load(path, sr=sr, mono=True)
     y, _ = librosa.effects.trim(y, top_db=30)
+    y = _highpass(y, sr)
+    rms = np.sqrt(np.mean(y ** 2)) if len(y) else 0.0
+    if rms > 1e-6:
+        y = y * (TARGET_RMS / rms)
+    peak = np.max(np.abs(y)) if len(y) else 0.0
+    if peak > 1.0:
+        y = y / peak  # safety clamp so a loud transient doesn't clip after gain-up
     return y, sr
 
 def contours(y, sr=SR):

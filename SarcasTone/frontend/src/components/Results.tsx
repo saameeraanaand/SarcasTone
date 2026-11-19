@@ -6,7 +6,9 @@ import { Notice, ProbBars, Stat } from "./ui";
 export default function Results({ r }: { r: TextResult | AudioResult }) {
   const pred = r.prediction; const isText = r.mode === "text"; const a = !isText ? (r as AudioResult).analysis : null; const ar = r as AudioResult;
   const sarc = pred?.label === "Sarcastic"; const sent = r.sentiment;
+  const shift = !isText ? ar.domain_shift : null;
   return (<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
+    {shift?.out_of_distribution && <Notice tone="warn"><b>Low-confidence recording.</b> {shift.note} (acoustic distance: {shift.mean_z_score.toFixed(1)}σ from training data)</Notice>}
     {pred ? (
       <div className="card relative overflow-hidden p-6">
         <div className={`absolute -right-16 -top-16 h-56 w-56 rounded-full blur-3xl ${sarc ? "bg-fuchsia-500/25" : "bg-cyan-500/25"}`} />

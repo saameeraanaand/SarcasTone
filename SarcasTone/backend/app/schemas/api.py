@@ -41,6 +41,11 @@ class AudioAnalysis(BaseModel):
     rms_mean: float; pause_ratio: float; n_pauses: int
     voiced_ratio: float
 
+class DomainShift(BaseModel):
+    out_of_distribution: bool
+    mean_z_score: float
+    note: str
+
 class AudioResult(BaseModel):
     mode: str
     model: Optional[str]
@@ -52,4 +57,5 @@ class AudioResult(BaseModel):
     explanation: str
     model_available: bool
     model_cv_accuracy: Optional[float] = None
+    domain_shift: Optional[DomainShift] = None
     processing_ms: float

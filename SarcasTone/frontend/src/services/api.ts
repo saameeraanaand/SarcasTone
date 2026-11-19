@@ -7,8 +7,9 @@ export interface AudioAnalysis {
   mfcc: number[][]; pauses: { start: number; duration: number }[]; speaking_rate_syll_per_s: number;
   pitch_mean_hz: number; pitch_std_hz: number; pitch_range_hz: number; rms_mean: number; pause_ratio: number; n_pauses: number; voiced_ratio: number;
 }
+export interface DomainShift { out_of_distribution: boolean; mean_z_score: number; note: string }
 export interface AudioResult { mode: "audio" | "multimodal"; model: string | null; prediction: Prediction | null; sentiment: Sentiment | null; text_source: string | null;
-  top_terms: Term[]; analysis: AudioAnalysis; explanation: string; model_available: boolean; model_cv_accuracy: number | null; processing_ms: number }
+  top_terms: Term[]; analysis: AudioAnalysis; explanation: string; model_available: boolean; model_cv_accuracy: number | null; domain_shift: DomainShift | null; processing_ms: number }
 export interface ModelMetrics { model: string; input: string; n_samples: number; cv: string; accuracy: number; precision: number; recall: number; f1: number; roc_auc: number;
   confusion_matrix: number[][]; roc_curve: { fpr: number[]; tpr: number[] }; train_time_s_total_5folds: number; inference_time_ms_per_sample: number }
 export interface MetricsResponse { dataset?: string; seed?: number; notes: string[]; models: Record<string, ModelMetrics> }
