@@ -51,9 +51,21 @@ def text_pipe():
     # sentence). Measured on a 4.3k-example held-out generic-English set it was WORSE (80.8% vs 84.3%
     # accuracy, 0.89 vs 0.924 ROC-AUC) -- reverted. Don't re-add it without checking
     # external_holdout_eval() first; an 8-sentence manual probe is too small to trust for this call.
+    #
+    # C=0.3 + class_weight="balanced" (was C=1.0, no class_weight): inspecting _top_terms() on real
+    # conversational inputs showed function words like "the"/"is"/"my"/"he"/"his" (headline-style
+    # artifacts) getting bigger LogReg coefficients (up to 1.5) than genuine sarcasm cues or the
+    # dedicated sentiment_shift feature (~0.05) -- the model was overfitting to headline register, not
+    # sarcasm. On a 40-sentence hand-labeled conversational probe set (not headlines, never trained on)
+    # this change raised accuracy 60%->67.5% and ROC-AUC 0.647->0.655-0.665, at a small cost to the
+    # headline holdout (accuracy 84.3%->82.3%, roc_auc 0.924->0.907) and no material change to the
+    # already-near-chance official MUStARD metric (0.490->0.474 accuracy). Net: more robust to ordinary
+    # typed sentences, slightly less sharp on headline-style text. Re-validate on a held-out
+    # conversational set (not headlines) before changing this again -- the headline holdout alone can't
+    # see this failure mode since it's drawn from the same narrow register the model was overfitting to.
     ct = ColumnTransformer([("t", TfidfVectorizer(ngram_range=(1, 2), min_df=2, sublinear_tf=True), "clean"),
                             ("s", StandardScaler(), SENT_COLS)])
-    return Pipeline([("fuse", ct), ("clf", LogisticRegression(C=1.0, max_iter=2000, random_state=SEED))])
+    return Pipeline([("fuse", ct), ("clf", LogisticRegression(C=0.3, max_iter=2000, random_state=SEED, class_weight="balanced"))])
 
 def speech_pipe():
     return Pipeline([("sc", StandardScaler()),

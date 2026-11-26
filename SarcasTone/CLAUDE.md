@@ -188,6 +188,44 @@ Speech-only was not similarly augmented — the headline dataset has no audio, a
 source of labeled audio in this project. Its generalization gap (see "Live-mic audio" above) remains
 open; loudness normalization narrowed it but didn't close it.
 
+**Follow-up fix (this session): function-word overfitting on conversational input.** Inspecting
+`MlService._top_terms()` on real typed sentences (not headlines) showed the LogReg routinely giving
+function words like "the"/"is"/"my"/"he"/"his" bigger coefficients (up to ~1.5) than genuine sarcasm
+cues or the dedicated `sentiment_shift` feature (~0.05) — the model had overfit to headline-register
+quirks (e.g. article/pronoun usage patterns specific to news headlines) rather than sarcasm itself.
+This was invisible to `text_only_generic_english_holdout` because that holdout is drawn from the same
+headline register as training — it can reward exactly this kind of overfitting. Built a 40-sentence
+hand-labeled conversational probe set (ordinary typed sentences, not headlines, never trained on) and
+grid-searched `C` / `class_weight` in `text_pipe()` against it. **Changed `text_pipe()` to
+`LogisticRegression(C=0.3, class_weight="balanced")`** (was `C=1.0`, no `class_weight`): conversational
+probe accuracy 60%→67.5%, at a small cost to the headline holdout (84.3%→82.3% accuracy, 0.924→0.907
+ROC-AUC) and no material change to the already-near-chance official MUStARD metric (0.490→0.474
+accuracy). Re-tried `stop_words="english"` combined with this change too — still worse on both the
+headline holdout *and* the conversational probe, confirming the earlier revert was right; the fix here
+is regularization/class-balance, not stopword removal. **Still far from solved**: 67.5% is only
+moderately better than chance on ordinary sentences — the architecture is capped by training data that
+is either narrow-domain (690 MUStARD lines) or a different register (headlines) from everyday typed
+text. The real next step for a meaningfully better number is training on genuinely conversational
+sarcasm data (e.g. Reddit SARC, Twitter/iSarcasm corpora), not further hyperparameter tuning of this
+same TF-IDF pipeline. **Lesson, worth repeating alongside the stopword one above:** a same-distribution
+holdout (headlines-in, headlines-out) cannot detect overfitting to that distribution's own register —
+any future pipeline change should also be checked against a held-out set in the *target* register
+(ordinary conversational sentences), not just the headline holdout.
+
+**Voice/live-mic failure mode confirmed empirically (this session):** fed the speech model synthetic
+TTS audio (macOS `say`, multiple voices) of both sarcastic- and sincere-worded sentences. All of them
+were predicted "Non-Sarcastic" with ~65-70% confidence regardless of the words spoken, because flat/
+non-theatrical prosody (no exaggerated pitch/energy variation) doesn't carry the signal the Random
+Forest learned from sitcom-actor delivery — it's effectively reading delivery style, not content, and
+falls back toward whichever class has flatter prosody on average in the 690-clip training set.
+**The existing out-of-distribution guard did not reliably catch this**: 3 of 4 synthetic test clips
+scored `mean_z_score` 1.08-1.16, under the `_typicality()` threshold of 1.5, so no warning was shown
+despite the prediction being driven by acoustic mismatch rather than real signal. Didn't change the
+threshold based on only 4 synthetic samples (too small/noisy to calibrate confidently, and TTS audio
+has its own unnatural acoustic signature that may not represent real human mic recordings well either)
+— flagging this as an open item: before trusting or further tuning `_typicality()`'s threshold, collect
+a real out-of-domain set (actual people on laptop mics, not TTS) large enough to calibrate it properly.
+
 ## Multimodal is late fusion, not joint feature fusion
 
 Originally multimodal (`fusion_pipe()`, now removed) trained one `ColumnTransformer`-based model on raw
